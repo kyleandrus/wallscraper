@@ -737,6 +737,59 @@ class WallTools(object):
         f.close()
         print "Config file updated"
 
+    def rename_lines(self, file_type, start_dir, find_string, replace_with):
+        """This tool will walk a directory structure from a starting point, and based on the file type, replace any
+        found strings in the files with the replacement string."""
+        # create new list to populate with files that match the filetype
+        file_list = []
+        for f in os.walk(unicode(start_dir, 'utf-8')):  # force utf-8 encoding since they're windows filenames
+            for i in f:  # iterate through child directories and create a list of valid file names
+                try:
+                    if len(i) == 1:  # find children directory files that match the filetype
+                        if file_type in i[0]:
+                            config_file = os.path.join(f[0], i[0])
+                            file_list.append(config_file)
+                            print 'Found config file:\t%s' % config_file
+                    if len(i) > 1:  # find parent directory files that match the filetype
+                        for child_iter in i:
+                            if file_type in child_iter:
+                                config_file = os.path.join(f[0], child_iter)
+                                file_list.append(config_file)
+                                print 'Found config file:\t%s' % config_file
+
+                except IndexError:
+                    pass
+
+        # Confirm user wants to replace strings
+        print '\nThis action will search through each %s file and  replace \'%s\' with \'%s\'' \
+              '\n\tPlease confirm[y]:' % (file_type, find_string, replace_with)
+        choice = raw_input()
+        changes = False
+        if choice.lower() == '' or choice.lower() in ['y', 'yes']:
+            print 'Choice accepted. Beginning file modification...\n\n....Please wait, this may take a second....\n'
+            count = 0
+            for f in file_list:
+                read_file = open(f)
+                new_file = []
+                for line in read_file.readlines():
+                    if find_string in line:
+                        print 'Found string in: %s\n\tReplacing:\n"%s" with "%s"' % (f, find_string, replace_with)
+                        new_file.append(line.replace(find_string, replace_with))
+                        changes = True
+                        count += 1
+                    elif find_string not in line:
+                        new_file.append(line)
+                read_file.close()
+                write_file = open(f, 'w')
+                write_file.writelines(new_file)
+                write_file.close()
+
+            if not changes:
+                print '"%s" not found in any "%s" files. Please check your settings and try again.' \
+                      % (find_string, file_type)
+            else:
+                '%s found in %s files.\nAll modifications finished.' % (find_string, count)
+
     def __init__(self):
         super(WallTools, self).__init__()
         self.user_directory = '.'
@@ -751,7 +804,8 @@ class WallTools(object):
                            'max_range': '2000', 'dl_to_diff_folders': 'true', 'verbose': 'False'})
 
 
-# TODO Build a new class that walks through old config files and re-runs existing queries, this can be used to update exisitng queries without much effort
+# TODO Build a new class that walks through old config files and re-runs existing queries, this can be used to
+# update exisitng queries without much effort
 class ConfigRefresh(object):
 
     def walk_config(self, config_dir):
@@ -778,6 +832,7 @@ class ConfigRefresh(object):
         super(ConfigRefresh, self).__init__()
         self.config_collection = {}
 
+
 class DownloadThread(threading.Thread):
     # The purpose of this class is to put the download loop into a thread for completion in the background
     def run(self):
@@ -792,24 +847,41 @@ class DownloadThread(threading.Thread):
         self._callback = callback
         self._stopping = False
 
+
 class ClipMonitor(threading.Thread):
     def run(self):
         recent_value = ""
-        # print 'recent_value', recent_value
         while not self._stopping:
             tmp_value = pyperclip.paste()
-            # print 'tmp_value', tmp_value
             if tmp_value != recent_value:
                 recent_value = tmp_value
                 self.search_url = recent_value
+                if validate_url(self.search_url):
+                    self.validated_url = True
                 if self._predicate(recent_value):
                     self._callback(recent_value)
-                # else:
-                #     print 'url is not a search query'
             time.sleep(self._pause)
 
     def stop(self):
         self._stopping = True
+
+    def validate_url(clipboard_content):
+        # The purpose of this method is to print the pyperclip contents to the screen
+        if clipboard_content.startswith("https://") and (
+                "wallhaven.cc" in clipboard_content and 'search' in clipboard_content):
+            print "Found url: %s" % str(clipboard_content)
+            # return True
+        else:
+            print "Non url keyword: %s" % str(clipboard_content)
+            # return False
+
+    def clip_query_builder(self, clipboard_content):
+        """
+        The purpose of this method is to build a query from the clipboard url
+        :param clipboard_content:
+        :return:
+        """
+        pass
 
     def __init__(self, predicate, callback, pause=.5):
         super(ClipMonitor, self).__init__()
@@ -817,23 +889,18 @@ class ClipMonitor(threading.Thread):
         self._callback = callback
         self._pause = pause
         self._stopping = False
+        self.validated_url = False
         self.search_url = ""
 
 
-def print_clip(clipboard_content):
+def validate_url(clipboard_content):
     # The purpose of this method is to print the pyperclip contents to the screen
     if clipboard_content.startswith("https://") and ("wallhaven.cc" in clipboard_content and 'search' in clipboard_content):
         print "Found url: %s" % str(clipboard_content)
+        # return True
     else:
         print "Non url keyword: %s" % str(clipboard_content)
-
-
-# def url_verified(url):
-#     # The purpose of this static method is to verify that the url input is a wallhaven search url and nothing else
-#     if url.startswith("https://") and ("wallhaven.cc" in url and 'search' in url):
-#         return True
-#     else:
-#         return False
+        # return False
 
 
 def html_to_file(html_file, destination_directory, temp_file_loc=None):
@@ -898,7 +965,7 @@ def main():
     # Make a list of command line arguments, omitting the [0] element which is the script itself.
     args = sys.argv[1:]
     # If no arguments are given, print proper usage and call the search method
-    arg_list = ['--config', '--favorites', '--refresh', '--subscriptions', '--monitor']
+    arg_list = ['--config', '--favorites', '--refresh', '--subscriptions', '--monitor', '--sed']
     arg_error = "\nProper usage:\n\n\t[Wallscraper.py --config (directory where the Custom_Search.ini is located," \
                 " or where you wish to create one. Leave blank for default e.g. c:\\Wallbase\\)]" \
                 "\n\n\t[Wallscraper.py --favorites (directory where the Fav_Search_ini is located," \
@@ -906,7 +973,9 @@ def main():
                 "\n\n\t[Wallscraper.py --refresh [REQUIRED: Directory where the previous search queries are located," \
                 " e.g. c:\\Wallbase\\]" \
                 "\n\n\t[Wallscraper.py --subscriptions (This will refresh all active subscriptions for the specified user\
-                ""\n\n\t[Wallscraper.py --monitor (This will monitor your clipboard for wallhaven search queries and automatically download the query for you"
+                ""\n\n\t[Wallscraper.py --monitor (This will monitor your clipboard for wallhaven search queries and " \
+                "automatically download the query for you" \
+                "\n\n\t[Wallscraper.py --sed [file_type] [start_dir] [find_string] [replace_with]"
 
     if not args or args[0] not in arg_list:
         print "\nYou must enter an argument to proceed!"
@@ -977,14 +1046,28 @@ def main():
             #TODO Let the user decide when a query is spawned : monitor changes to the clipboard and ask the user to
             # initiate the query, then if yes, spawn the query in the background and process it.
             #TODO Treat this the same way you would treat a query that's ran from the custom_search, only via clipboard
-            watcher = ClipMonitor(print_clip, 1.)
+            # while True: # Sleep for 1 second and monitor clipboard for changes
+            time.sleep(1)
+            watcher = ClipMonitor(validate_url, 1.)
             watcher.start()
-            monitor_download(config_dir)
+            monitor_download(config_dir, config_file)
 
 
             # TODO Make it so that search queries are processed in a download loop thread
             # download = DownloadThread()
 
+        elif args[0] == '--sed':
+            # TODO Add the ability to walk a directory structure and perform said operations on the files in the folders
+            if args[0] == 'sed' and len[args][:0] < 4:
+                print arg_error
+                sys.exit()
+            else:
+                # Set sed walk attributes and kick off the function
+                file_type = args[1]
+                start_dir = args[2]
+                find_string = args[3]
+                replace_with = args[4]
+                tools.rename_lines(file_type, start_dir, find_string, replace_with)
 
 def config_download(config_dir, config_file):
     scrape.download_loop(config_dir, config_file)
@@ -1006,10 +1089,10 @@ def refresh_download(config_dir, config_file):
         scrape.refresh = False
 
 
-def monitor_download(config_dir):
+def monitor_download(config_dir, config_file):
     #TODO Enhance this method to support automatically downloading queries based on the keyboard clipboard.
     #TODO Make it so that a user can just press a button and begin the download after copying some text
-    scrape.download_loop(config_dir, None)
+    scrape.download_loop(config_dir, config_file)
 
 
 
