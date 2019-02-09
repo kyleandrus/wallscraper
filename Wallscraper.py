@@ -773,22 +773,23 @@ class WallTools(object):
                 new_file = []
                 for line in read_file.readlines():
                     if find_string in line:
-                        print 'Found string in: %s\n\tReplacing:\n"%s" with "%s"' % (f, find_string, replace_with)
                         new_file.append(line.replace(find_string, replace_with))
                         changes = True
                         count += 1
                     elif find_string not in line:
                         new_file.append(line)
                 read_file.close()
-                write_file = open(f, 'w')
-                write_file.writelines(new_file)
-                write_file.close()
+                if changes:  # Only open the file for writing if you're making changes
+                    print 'Found string in: %s\n\tReplacing:"%s" with "%s"' % (f, find_string, replace_with)
+                    write_file = open(f, 'w')
+                    write_file.writelines(new_file)
+                    write_file.close()
 
             if not changes:
                 print '"%s" not found in any "%s" files. Please check your settings and try again.' \
                       % (find_string, file_type)
             else:
-                '%s found in %s files.\nAll modifications finished.' % (find_string, count)
+                print '%s found in %s files.\nAll modifications finished.' % (find_string, count)
 
     def __init__(self):
         super(WallTools, self).__init__()
